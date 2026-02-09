@@ -36,11 +36,12 @@ Internet Access
 
 ```
 raspberry-pi-vpn/
+├── config.sh                         # Configuration file (EDIT THIS FIRST!)
 ├── relay-wireguard-setup.sh         # Setup relay server (port 22)
-├── pi-wireguard-tunnel-setup.sh     # Setup Pi VPN server (port 2222) - with dynamic interface
-├── fix-vpn-internet-dynamic.sh      # Fix VPN with auto-interface detection (RECOMMENDED)
-├── fix-pi-vpn-after-restart.sh      # Fix VPN issues (basic fix)
+├── pi-wireguard-tunnel-setup.sh     # Setup Pi VPN server (port 2222)
+├── setup-relay-socat-forward.sh     # Setup socat UDP forwarding (if needed)
 ├── diagnose-pi-vpn.sh               # Diagnostic tool for VPN issues
+├── generate-phone-qr.sh             # Generate phone VPN QR code
 ├── README.md                         # This file
 └── QUICK-START.md                    # Quick deployment guide
 ```
@@ -49,12 +50,25 @@ raspberry-pi-vpn/
 
 ## 🚀 Quick Start
 
+### Step 0: Configure (IMPORTANT!)
+
+**Edit `config.sh` with your settings:**
+```bash
+# Edit these values to match your setup
+nano config.sh
+
+# Key settings to change:
+# - DOMAIN_NAME="your-domain.com"
+# - SSH_PASSWORD="your-password"
+# - VPN_NETWORK, ports, etc.
+```
+
 ### Initial Setup (One Time)
 
 **1. Setup Relay Server (Port 22):**
 ```bash
-# Copy script to relay
-scp relay-wireguard-setup.sh ubuntu@pi.nandanprakash.com:/tmp/
+# Copy config and script to relay
+scp config.sh relay-wireguard-setup.sh ubuntu@pi.nandanprakash.com:/tmp/
 
 # SSH to relay and run
 ssh ubuntu@pi.nandanprakash.com

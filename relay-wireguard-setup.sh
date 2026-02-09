@@ -1,17 +1,33 @@
 #!/bin/bash
 # WireGuard Relay Server Setup
 # Replaces rathole with WireGuard site-to-site tunnel + port forwarding
-# Run on: pi.nandanprakash.com
+# Run on: Relay server
 
 set -e
+
+# Load configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/config.sh" ]; then
+    source "$SCRIPT_DIR/config.sh"
+else
+    echo "Error: config.sh not found!"
+    echo "Please create config.sh from config.sh.example"
+    exit 1
+fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "WireGuard Relay Server Setup"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Step 1: Stop and remove rathole
-echo "Step 1: Removing rathole..."
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root (use sudo)"
+  exit 1
+fi
+
+# Step 1: Stop and remove rathole (if exists)
+echo "Step 1: Removing rathole (if exists)..."
 systemctl stop rathole-server 2>/dev/null || true
 systemctl disable rathole-server 2>/dev/null || true
 rm -f /etc/systemd/system/rathole-server.service
@@ -24,8 +40,8 @@ echo ""
 # Step 2: Install WireGuard
 echo "Step 2: Installing WireGuard..."
 apt-get update -qq
-apt-get install -y wireguard wireguard-tools qrencode
-echo "✓ WireGuard installed"
+apt-get install -y wireguard wireguard-tools qrencode socat
+echo "✓ WireGuard and socat installed"
 echo ""
 
 # Step 3: Generate keys
@@ -42,16 +58,16 @@ cat > /etc/wireguard/wg-tunnel.conf << EOF
 # Site-to-site tunnel interface
 # Relay server waits for Pi to connect
 [Interface]
-Address = 10.9.0.1/30
-ListenPort = 51821
+Address = $TUNNEL_RELAY_IP/30
+ListenPort = $WIREGUARD_TUNNEL_PORT
 PrivateKey = $RELAY_PRIVATE
 
 # Pi server peer (will connect to us)
 [Peer]
 # PublicKey will be added after Pi setup
 PublicKey = PLACEHOLDER_PI_PUBLIC_KEY
-AllowedIPs = 10.9.0.2/32, 10.8.0.0/24
-PersistentKeepalive = 25
+AllowedIPs = $TUNNEL_PI_IP/32, $VPN_NETWORK
+PersistentKeepalive = $PERSISTENT_KEEPALIVE
 EOF
 
 echo "✓ Tunnel config created at /etc/wireguard/wg-tunnel.conf"
@@ -59,44 +75,79 @@ echo ""
 
 # Step 5: Enable IP forwarding
 echo "Step 5: Enabling IP forwarding..."
-sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv4.ip_forward=1 > /dev/null
 grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 echo "✓ IP forwarding enabled"
 echo ""
 
-# Step 6: Update WireGuard config with port forwarding
-echo "Step 6: Creating tunnel config with port forwarding..."
-cat > /etc/wireguard/wg-tunnel.conf << EOF
-# Site-to-site tunnel interface
-# Relay server waits for Pi to connect
-[Interface]
-Address = 10.9.0.1/30
-ListenPort = 51821
-PrivateKey = $RELAY_PRIVATE
-PostUp = iptables -t nat -A PREROUTING -p udp --dport 51820 -j DNAT --to-destination 10.8.0.1:51820; iptables -t nat -A PREROUTING -p tcp --dport 2222 -j DNAT --to-destination 10.9.0.2:22; iptables -A FORWARD -i wg-tunnel -j ACCEPT; iptables -A FORWARD -o wg-tunnel -j ACCEPT; iptables -t nat -A POSTROUTING -o wg-tunnel -j MASQUERADE
-PostDown = iptables -t nat -D PREROUTING -p udp --dport 51820 -j DNAT --to-destination 10.8.0.1:51820; iptables -t nat -D PREROUTING -p tcp --dport 2222 -j DNAT --to-destination 10.9.0.2:22; iptables -D FORWARD -i wg-tunnel -j ACCEPT; iptables -D FORWARD -o wg-tunnel -j ACCEPT; iptables -t nat -D POSTROUTING -o wg-tunnel -j MASQUERADE
+# Step 6: Start tunnel (will error about missing peer, that's OK)
+echo "Step 6: Starting tunnel interface..."
+wg-quick up wg-tunnel 2>/dev/null || echo "Tunnel interface created (peer not configured yet)"
+systemctl enable wg-quick@wg-tunnel
+echo "✓ Tunnel interface enabled"
+echo ""
 
-# Pi server peer (will connect to us)
-[Peer]
-# PublicKey will be added after Pi setup
-PublicKey = PLACEHOLDER_PI_PUBLIC_KEY
-AllowedIPs = 10.9.0.2/32, 10.8.0.0/24
-PersistentKeepalive = 25
+# Step 7: Setup socat UDP forwarding for WireGuard VPN traffic
+echo "Step 7: Setting up socat UDP forwarding..."
+cat > /etc/systemd/system/wireguard-udp-forward.service << EOF
+[Unit]
+Description=WireGuard UDP Forwarding via socat
+After=network.target wg-quick@wg-tunnel.service
+Wants=wg-quick@wg-tunnel.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat -T 30 UDP4-LISTEN:$WIREGUARD_VPN_PORT,reuseaddr,fork UDP4:$TUNNEL_PI_IP:$WIREGUARD_VPN_PORT
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
-echo "✓ Tunnel config created"
+systemctl daemon-reload
+systemctl enable wireguard-udp-forward.service
+systemctl restart wireguard-udp-forward.service
+echo "✓ socat UDP forwarding enabled"
 echo ""
 
-# Step 7: Configure firewall
-echo "Step 7: Configuring firewall..."
-ufw allow 51820/udp comment 'WireGuard VPN port'
-ufw allow 51821/udp comment 'WireGuard tunnel port'
-ufw allow 2222/tcp comment 'SSH to remote Pi'
-echo "✓ Firewall configured"
+# Step 8: Configure firewall
+echo "Step 8: Configuring firewall..."
+if command -v ufw &> /dev/null; then
+    ufw allow $WIREGUARD_VPN_PORT/udp comment 'WireGuard VPN port' 2>/dev/null || true
+    ufw allow $WIREGUARD_TUNNEL_PORT/udp comment 'WireGuard tunnel port' 2>/dev/null || true
+    ufw allow $SSH_FORWARD_PORT/tcp comment 'SSH to remote Pi' 2>/dev/null || true
+    echo "✓ UFW firewall configured"
+else
+    echo "ℹ UFW not installed, skipping firewall configuration"
+fi
 echo ""
 
-# Step 8: Save relay public key for Pi setup
-echo "Step 8: Saving keys..."
+# Step 9: Setup SSH port forwarding via iptables
+echo "Step 9: Setting up SSH port forwarding..."
+# Check if DNAT rule exists
+if ! iptables -t nat -C PREROUTING -p tcp --dport $SSH_FORWARD_PORT -j DNAT --to-destination $TUNNEL_PI_IP:22 2>/dev/null; then
+    iptables -t nat -A PREROUTING -p tcp --dport $SSH_FORWARD_PORT -j DNAT --to-destination $TUNNEL_PI_IP:22
+    echo "✓ SSH DNAT rule added"
+else
+    echo "✓ SSH DNAT rule already exists"
+fi
+
+# Add FORWARD rules for tunnel traffic
+iptables -I FORWARD 1 -i wg-tunnel -j ACCEPT 2>/dev/null || echo "FORWARD rule already exists"
+iptables -I FORWARD 1 -o wg-tunnel -j ACCEPT 2>/dev/null || echo "FORWARD rule already exists"
+
+# Add MASQUERADE for tunnel traffic
+if ! iptables -t nat -C POSTROUTING -o wg-tunnel -j MASQUERADE 2>/dev/null; then
+    iptables -t nat -A POSTROUTING -o wg-tunnel -j MASQUERADE
+    echo "✓ MASQUERADE rule added"
+else
+    echo "✓ MASQUERADE rule already exists"
+fi
+echo ""
+
+# Step 10: Save relay public key
+echo "Step 10: Saving keys..."
 mkdir -p /root/wireguard-relay
 echo "$RELAY_PUBLIC" > /root/wireguard-relay/relay-public-key.txt
 echo "$RELAY_PRIVATE" > /root/wireguard-relay/relay-private-key.txt
@@ -105,7 +156,7 @@ chmod 600 /root/wireguard-relay/*
 echo "✓ Keys saved to /root/wireguard-relay/"
 echo ""
 
-# Step 9: Instructions
+# Step 11: Instructions
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✓ Relay Server Setup Complete (Step 1 of 2)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -116,20 +167,17 @@ echo ""
 echo "IMPORTANT: Copy this public key!"
 echo ""
 echo "Next Steps:"
-echo "  1. Run the Pi setup script on ubuntu@192.168.86.126"
+echo "  1. Run the Pi setup script on your Pi server"
 echo "  2. The Pi script will give you its public key"
 echo "  3. Come back here and run:"
 echo "     sed -i 's/PLACEHOLDER_PI_PUBLIC_KEY/<PI_PUBLIC_KEY>/' /etc/wireguard/wg-tunnel.conf"
-echo "     wg-quick up wg-tunnel"
-echo "     systemctl enable wg-quick@wg-tunnel"
+echo "     systemctl restart wg-quick@wg-tunnel"
 echo ""
-echo "Port Forwarding Configured:"
-echo "  51820/udp → 10.8.0.1:51820 (Phone VPN traffic)"
-echo "  51821/udp → Listening (Pi tunnel)"
-echo "  2222/tcp  → 10.9.0.2:22 (SSH to Pi)"
+echo "Configuration:"
+echo "  - VPN Port: $WIREGUARD_VPN_PORT (forwarded via socat to Pi)"
+echo "  - Tunnel Port: $WIREGUARD_TUNNEL_PORT (Pi connects here)"
+echo "  - SSH Port: $SSH_FORWARD_PORT (forwarded to Pi via DNAT)"
+echo "  - Domain: $DOMAIN_NAME"
 echo ""
-echo "Router Port Forwarding Required:"
-echo "  Forward UDP 51820 to this server"
-echo "  Forward UDP 51821 to this server"
-echo "  Forward TCP 2222 to this server"
+echo "Clients can connect to: $DOMAIN_NAME:$WIREGUARD_VPN_PORT"
 echo ""
