@@ -1,243 +1,361 @@
-# 🔐 Raspberry Pi WireGuard VPN Server
+# 🌐 WireGuard NAT Tunnel
 
-**Production-ready WireGuard VPN accessible from anywhere via pi.nandanprakash.com**
+**Run a WireGuard VPN server anywhere (even behind NAT) and make it publicly accessible through a relay server.**
 
-Two-VM setup with WireGuard tunnel for secure remote access and VPN services.
-
----
-
-## 🏗️ Architecture Overview
-
-```
-Phone/Client (anywhere)
-   ↓ WireGuard VPN
-   ↓ pi.nandanprakash.com:51820
-   ↓
-Relay Server (pi.nandanprakash.com:22)
-   ↓ Port forward UDP 51820 → 10.8.0.1:51820 (VPN)
-   ↓ Port forward TCP 2222 → 10.9.0.2:22 (SSH)
-   ↓ WireGuard Tunnel (10.9.0.1 ←→ 10.9.0.2)
-   ↓
-Pi VPN Server (pi.nandanprakash.com:2222)
-   ↓ VPN Server (10.8.0.1:51820)
-   ↓ NAT Masquerade
-   ↓
-Internet Access
-```
-
-**Setup:**
-- **Server 1 (Port 22)**: Relay server with WireGuard tunnel endpoint, forwards traffic via DNAT
-- **Server 2 (Port 2222)**: Pi VPN server behind NAT, runs WireGuard VPN for phone clients
-- **Connection**: Both accessible as ubuntu@pi.nandanprakash.com (different ports)
+Perfect for home servers, Raspberry Pi, or any VM behind NAT/firewall where you can't open ports directly.
 
 ---
 
-## 📦 Project Structure
+## 🎯 What Problem Does This Solve?
 
-```
-raspberry-pi-vpn/
-├── config.sh                         # Configuration file (EDIT THIS FIRST!)
-├── relay-wireguard-setup.sh         # Setup relay server (port 22)
-├── pi-wireguard-tunnel-setup.sh     # Setup Pi VPN server (port 2222)
-├── setup-relay-socat-forward.sh     # Setup socat UDP forwarding (if needed)
-├── diagnose-pi-vpn.sh               # Diagnostic tool for VPN issues
-├── generate-phone-qr.sh             # Generate phone VPN QR code
-├── README.md                         # This file
-└── QUICK-START.md                    # Quick deployment guide
-```
+**Scenario:** You want to run a personal VPN server at home/office, but:
+- ❌ Your server is behind NAT (no public IP)
+- ❌ You can't configure port forwarding on the router
+- ❌ Your ISP blocks incoming connections
+- ❌ You're behind CGNAT (Carrier-Grade NAT)
+
+**Solution:** Use a relay server (VPS with public IP) to tunnel traffic to your VPN server!
 
 ---
 
-## 🚀 Quick Start
+## 🏗️ How It Works
 
-### Step 0: Configure (IMPORTANT!)
+```
+┌─────────────┐
+│ VPN Clients │  (Your phone, laptop anywhere in the world)
+│ 📱 💻 🖥️   │
+└──────┬──────┘
+       │ Connects to relay.example.com:51820
+       ↓
+┌──────────────────┐
+│  Relay Server    │  (VPS with public IP)
+│  (Port 22)       │  - Forwards VPN traffic via socat
+│  ☁️              │  - Forwards SSH via iptables DNAT
+└────────┬─────────┘
+         │ WireGuard Tunnel (10.9.0.1 ↔ 10.9.0.2)
+         ↓
+┌────────────────────┐
+│  VPN Server        │  (Behind NAT - your home/office)
+│  (Port 2222)       │  - Runs WireGuard VPN
+│  🏠                │  - Provides internet to VPN clients
+└────────┬───────────┘
+         │ NAT Masquerade
+         ↓
+    🌍 Internet
+```
 
-**Edit `config.sh` with your settings:**
+**Traffic Flow:**
+1. VPN clients connect to `relay.example.com:51820`
+2. Relay uses `socat` to forward UDP packets through the WireGuard tunnel
+3. VPN server receives packets, processes them, and routes to internet
+4. Return traffic follows the reverse path
+
+---
+
+## ✨ Features
+
+- ✅ **NAT Traversal** - VPN server works behind any NAT/firewall
+- ✅ **No Port Forwarding Needed** - On VPN server side
+- ✅ **Dynamic Interface Detection** - Auto-detects eth0/wlan0
+- ✅ **SSH Access** - Access VPN server via `relay.example.com:2222`
+- ✅ **Production Ready** - Systemd services, auto-restart
+- ✅ **Easy Setup** - 2 scripts, 5 minutes
+- ✅ **Secure** - WireGuard encryption end-to-end
+
+---
+
+## 📋 Prerequisites
+
+### Relay Server (VPS with Public IP)
+- Ubuntu/Debian server with public IP
+- Root/sudo access
+- Ports available: 51820/UDP, 51821/UDP, 2222/TCP
+- Router port forwarding configured (if behind router)
+
+### VPN Server (Can be behind NAT)
+- Ubuntu/Debian server (Raspberry Pi works great!)
+- Root/sudo access
+- Can reach internet (outbound connections)
+- No inbound ports needed!
+
+### Your Computer
+- To run scripts and generate client configs
+
+---
+
+## 🚀 Quick Start (5 Minutes)
+
+### Step 1: Configure
+
 ```bash
-# Edit these values to match your setup
+# Clone this repository
+git clone https://github.com/yourusername/wireguard-nat-tunnel.git
+cd wireguard-nat-tunnel
+
+# Edit config.sh - ONLY 2 REQUIRED CHANGES:
 nano config.sh
-
-# Key settings to change:
-# - DOMAIN_NAME="your-domain.com"
-# - SSH_PASSWORD="your-password"
-# - VPN_NETWORK, ports, etc.
 ```
 
-### Initial Setup (One Time)
-
-**1. Setup Relay Server (Port 22):**
+**Minimal config (only change these):**
 ```bash
-# Copy config and script to relay
-scp config.sh relay-wireguard-setup.sh ubuntu@pi.nandanprakash.com:/tmp/
-
-# SSH to relay and run
-ssh ubuntu@pi.nandanprakash.com
-sudo bash /tmp/relay-wireguard-setup.sh
-# Copy the relay public key shown at the end
+RELAY_DOMAIN="your-relay-server.com"    # Your relay's domain/IP
+SSH_PASSWORD="YourSecurePassword"       # Change this!
 ```
 
-**2. Setup Pi VPN Server (Port 2222):**
-```bash
-# Copy script to Pi server
-scp pi-wireguard-tunnel-setup.sh ubuntu@pi.nandanprakash.com:/tmp/
+That's it! Defaults work for everything else.
 
-# SSH to Pi server and run
-ssh -p 2222 ubuntu@pi.nandanprakash.com
-sudo bash /tmp/pi-wireguard-tunnel-setup.sh
-# Copy the Pi public key shown at the end
+### Step 2: Setup Relay Server
+
+```bash
+# Copy files to relay server
+scp config.sh relay-wireguard-setup.sh user@your-relay-server.com:/tmp/
+
+# SSH to relay and run setup
+ssh user@your-relay-server.com
+cd /tmp
+sudo bash relay-wireguard-setup.sh
+
+# ✅ Copy the relay public key shown at the end
 ```
 
-**3. Complete Relay Configuration:**
+### Step 3: Setup VPN Server
+
 ```bash
-# SSH back to relay
-ssh ubuntu@pi.nandanprakash.com
+# Copy files to VPN server
+scp config.sh pi-wireguard-tunnel-setup.sh user@vpn-server-local-ip:/tmp/
 
-# Add Pi public key and restart
-PI_KEY="<PASTE_PI_PUBLIC_KEY_HERE>"
-sudo sed -i "s/PLACEHOLDER_PI_PUBLIC_KEY/$PI_KEY/" /etc/wireguard/wg-tunnel.conf
-sudo wg-quick down wg-tunnel 2>/dev/null || true
-sudo wg-quick up wg-tunnel
-sudo systemctl enable wg-quick@wg-tunnel
+# SSH to VPN server and run setup
+ssh user@vpn-server-local-ip
+cd /tmp
+sudo bash pi-wireguard-tunnel-setup.sh
 
-# Verify
+# ✅ Copy the VPN server public key shown at the end
+```
+
+### Step 4: Connect Relay to VPN Server
+
+```bash
+# SSH back to relay server
+ssh user@your-relay-server.com
+
+# Add VPN server's public key
+VPN_KEY="<paste_vpn_server_public_key_here>"
+sudo sed -i "s/PLACEHOLDER_PI_PUBLIC_KEY/$VPN_KEY/" /etc/wireguard/wg-tunnel.conf
+sudo systemctl restart wg-quick@wg-tunnel
+
+# Verify tunnel is up
 sudo wg show wg-tunnel
-ping -c 3 10.9.0.2
+# Should show "latest handshake: X seconds ago"
 ```
 
-See `QUICK-START.md` for detailed instructions.
+### Step 5: Generate Client Config
 
----
-
-## 🔧 Maintenance & Troubleshooting
-
-### Check VPN Status
 ```bash
-# SSH to Pi VPN server
-ssh -p 2222 ubuntu@pi.nandanprakash.com
+# On your computer (or relay server)
+./generate-phone-qr.sh
 
-# Run diagnostic
-./diagnose-pi-vpn.sh
-```
-
-### Fix VPN Issues (No Internet on Phone)
-```bash
-# SSH to Pi VPN server
-ssh -p 2222 ubuntu@pi.nandanprakash.com
-
-# Run dynamic interface fix (RECOMMENDED - auto-detects active interface)
-sudo bash /tmp/fix-vpn-internet-dynamic.sh
-
-# OR run the basic fix
-sudo bash /tmp/fix-pi-vpn-after-restart.sh
-```
-
-**Common Issues Fixed:**
-- ✅ **Dynamic interface detection** - automatically uses eth0, wlan0, or any active interface
-- ✅ Interface changes (wlan0 → eth0 or vice versa)
-- ✅ Missing NAT/MASQUERADE rules
-- ✅ Duplicate iptables rules cleanup
-- ✅ IP forwarding disabled
-- ✅ Services not starting after reboot
-
-### Manual Service Management
-```bash
-# Restart WireGuard VPN
-sudo wg-quick down wg0 && sudo wg-quick up wg0
-
-# Restart tunnel
-sudo wg-quick down wg-tunnel && sudo wg-quick up wg-tunnel
-
-# Check status
-sudo wg show all
-sudo systemctl status wg-quick@wg0
-sudo systemctl status wg-quick@wg-tunnel
-
-# View logs
-sudo journalctl -u wg-quick@wg0 -f
-sudo journalctl -u wg-quick@wg-tunnel -f
+# Scan QR code with WireGuard app on your phone!
 ```
 
 ---
 
-## 🎯 Key Features
+## 📱 Connecting Clients
 
-✅ **WireGuard Site-to-Site Tunnel** - Fast, secure connection through NAT
-✅ **DNAT Port Forwarding** - Seamless VPN and SSH access
-✅ **Works Behind NAT** - Pi server initiates connection
-✅ **High Performance** - 50-100+ Mbps (vs 2-5 Mbps with rathole)
-✅ **Auto-Recovery** - Services restart automatically at boot
-✅ **Production Ready** - Tested and deployed
+### Mobile (iOS/Android)
+1. Install [WireGuard app](https://www.wireguard.com/install/)
+2. Scan QR code from `generate-phone-qr.sh`
+3. Toggle VPN ON
+4. ✅ All traffic routes through your VPN!
+
+### Desktop (Windows/Mac/Linux)
+1. Install [WireGuard](https://www.wireguard.com/install/)
+2. Import config file generated by script
+3. Activate connection
+
+**Endpoint:** `your-relay-server.com:51820`
 
 ---
 
-## 🔐 Security
+## 🔧 Configuration Reference
 
-- ✅ WireGuard encryption (Noise protocol)
-- ✅ UFW firewall on both servers
-- ✅ SSH key authentication recommended
-- ✅ No direct inbound ports on Pi VPN server
+### Minimal Setup (Required)
+```bash
+RELAY_DOMAIN="vpn.example.com"      # Your relay server's public address
+SSH_PASSWORD="SecurePassword123"    # SSH password for both servers
+```
+
+### Common Customizations
+```bash
+# Use different VPN network
+VPN_NETWORK="10.200.0.0/24"
+VPN_GATEWAY="10.200.0.1"
+
+# Use different ports
+WIREGUARD_PORT="8443"               # Change if 51820 is blocked
+WIREGUARD_TUNNEL_PORT="8444"
+SSH_FORWARD_PORT="2200"
+
+# Use Cloudflare DNS instead of Google
+VPN_DNS_SERVERS="1.1.1.1, 1.0.0.1"
+```
+
+---
+
+## 🛠️ Management
+
+### Check Status
+
+**On Relay:**
+```bash
+sudo wg show wg-tunnel              # Tunnel status
+sudo systemctl status wireguard-udp-forward  # socat status
+```
+
+**On VPN Server:**
+```bash
+sudo wg show wg0                    # VPN clients
+sudo wg show wg-tunnel              # Tunnel to relay
+./diagnose-pi-vpn.sh                # Full diagnostic
+```
+
+### Restart Services
+
+**Relay:**
+```bash
+sudo systemctl restart wg-quick@wg-tunnel
+sudo systemctl restart wireguard-udp-forward
+```
+
+**VPN Server:**
+```bash
+sudo systemctl restart wg-quick@wg0
+sudo systemctl restart wg-quick@wg-tunnel
+```
+
+### Add More Clients
+
+```bash
+# Generate new client
+./generate-phone-qr.sh
+
+# Or manually add to VPN server's /etc/wireguard/wg0.conf
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### VPN Connects But No Internet
+
+**Check 1: Verify NAT is working**
+```bash
+# On VPN server
+sudo iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE
+# Should show packets going through
+```
+
+**Check 2: Check forwarding**
+```bash
+# On VPN server
+sudo iptables -L FORWARD -n -v | grep wg0
+# Should show packets
+```
+
+**Check 3: Disable corporate VPN**
+- Nested VPNs cause conflicts!
+- Disconnect from work VPN before connecting to your VPN
+
+### Can't Connect to VPN
+
+**Check 1: Relay is reachable**
+```bash
+nc -zvu your-relay-server.com 51820
+# Should say "succeeded"
+```
+
+**Check 2: Tunnel is up**
+```bash
+# On relay
+sudo wg show wg-tunnel | grep handshake
+# Should show recent handshake
+```
+
+**Check 3: socat is running**
+```bash
+# On relay
+sudo systemctl status wireguard-udp-forward
+# Should be "active (running)"
+```
+
+### SSH to VPN Server Not Working
+
+```bash
+# From anywhere
+ssh -p 2222 user@your-relay-server.com
+
+# If fails, check DNAT on relay
+sudo iptables -t nat -L PREROUTING -n -v | grep 2222
+```
 
 ---
 
 ## 📊 Network Details
 
-### Relay Server (Port 22)
-- **Tunnel IP**: 10.9.0.1/30
-- **Listen Port**: 51821 (WireGuard tunnel)
-- **Services**: wg-tunnel
+### IP Ranges
+- **VPN Client Network:** `10.8.0.0/24` (254 clients)
+- **Tunnel Network:** `10.9.0.0/30` (2 IPs)
+  - Relay: `10.9.0.1`
+  - VPN Server: `10.9.0.2`
 
-### Pi VPN Server (Port 2222)
-- **Tunnel IP**: 10.9.0.2/30
-- **VPN Network**: 10.8.0.0/24
-- **VPN Server IP**: 10.8.0.1
-- **Services**: wg-tunnel, wg0
+### Ports
+- **51820/UDP:** VPN client connections (public)
+- **51821/UDP:** Relay-to-VPN tunnel (public)
+- **2222/TCP:** SSH to VPN server (public)
 
-### Port Forwarding (on relay)
-- **UDP 51820** → 10.8.0.1:51820 (VPN traffic)
-- **TCP 2222** → 10.9.0.2:22 (SSH to Pi)
-- **UDP 51821** → Tunnel endpoint
-
----
-
-## 🆘 Quick Help
-
-**SSH Credentials (both servers):**
-- Username: `ubuntu`
-- Password: `NandanPi2121`
-
-**Access Relay Server:**
-```bash
-ssh ubuntu@pi.nandanprakash.com
-```
-
-**Access Pi VPN Server:**
-```bash
-ssh -p 2222 ubuntu@pi.nandanprakash.com
-```
-
-**Phone VPN Not Working?**
-1. **Disconnect from any other VPN first!** (Corporate VPN, other VPN apps)
-   - Nested VPNs cause routing conflicts
-2. SSH to Pi server: `ssh -p 2222 ubuntu@pi.nandanprakash.com`
-3. Run diagnostic: `sudo bash diagnose-pi-vpn.sh`
-4. Run fix: `sudo bash fix-pi-vpn-after-restart.sh`
-5. Reconnect from phone
-
-**Get VPN Client Configs:**
-```bash
-ssh -p 2222 ubuntu@pi.nandanprakash.com
-sudo cat /etc/wireguard/wg0.conf  # See existing peers
-```
+### Services
+- **Relay:** `wg-tunnel`, `wireguard-udp-forward` (socat)
+- **VPN Server:** `wg-tunnel`, `wg0`
 
 ---
 
-## 📝 Notes
+## 🔐 Security Considerations
 
-- Previous rathole tunnel setup has been replaced with WireGuard tunnel for better performance
-- Both servers run Ubuntu and have WireGuard installed
-- Router must have port forwarding configured for UDP 51820, UDP 51821, and TCP 2222
-- Services are enabled at boot for automatic recovery
+- ✅ WireGuard uses state-of-the-art cryptography (Noise protocol)
+- ✅ All traffic encrypted end-to-end
+- ✅ Change default SSH password in `config.sh`
+- ✅ Consider using SSH keys instead of passwords
+- ✅ Configure firewall (UFW) on both servers
+- ✅ No WireGuard private keys in repository
+- ⚠️ Relay server must be trusted (sees encrypted traffic)
 
 ---
 
-**🎉 Production Ready!** See `QUICK-START.md` for deployment guide.
+## 🤝 Contributing
+
+Contributions welcome! Please open an issue or pull request.
+
+---
+
+## 📄 License
+
+MIT License - feel free to use for personal or commercial projects.
+
+---
+
+## 🙏 Acknowledgments
+
+Built with:
+- [WireGuard](https://www.wireguard.com/) - Fast, modern VPN
+- [socat](http://www.dest-unreach.org/socat/) - Multipurpose relay
+
+---
+
+## 📚 Learn More
+
+- [WireGuard Documentation](https://www.wireguard.com/quickstart/)
+- [How NAT Traversal Works](https://en.wikipedia.org/wiki/NAT_traversal)
+- [WireGuard Protocol Paper](https://www.wireguard.com/papers/wireguard.pdf)
+
+---
+
+**🎉 Enjoy your personal VPN accessible from anywhere!**
