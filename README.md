@@ -202,10 +202,12 @@ ssh -p 2222 ubuntu@pi.nandanprakash.com
 ```
 
 **Phone VPN Not Working?**
-1. SSH to Pi server: `ssh -p 2222 ubuntu@pi.nandanprakash.com`
-2. Run diagnostic: `sudo bash diagnose-pi-vpn.sh`
-3. Run fix: `sudo bash fix-pi-vpn-after-restart.sh`
-4. Reconnect from phone
+1. **Disconnect from any other VPN first!** (Corporate VPN, other VPN apps)
+   - Nested VPNs cause routing conflicts
+2. SSH to Pi server: `ssh -p 2222 ubuntu@pi.nandanprakash.com`
+3. Run diagnostic: `sudo bash diagnose-pi-vpn.sh`
+4. Run fix: `sudo bash fix-pi-vpn-after-restart.sh`
+5. Reconnect from phone
 
 **Get VPN Client Configs:**
 ```bash
