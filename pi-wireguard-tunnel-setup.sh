@@ -63,14 +63,15 @@ else
   # Backup existing config
   cp /etc/wireguard/wg0.conf /etc/wireguard/wg0.conf.backup.$(date +%Y%m%d_%H%M%S)
 
-  # Update PostUp/PostDown to route through tunnel
+  # Update PostUp/PostDown with dynamic interface detection
   sed -i '/^PostUp/d' /etc/wireguard/wg0.conf
   sed -i '/^PostDown/d' /etc/wireguard/wg0.conf
 
-  # Add new routing rules
+  # Add new routing rules with dynamic interface detection
+  # Uses %i (wg0) to exclude VPN interface, masquerades on default route interface
   cat >> /etc/wireguard/wg0.conf << 'EOF'
-PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o $(ip route show default | awk '/default/ {print $5}') -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o $(ip route show default | awk '/default/ {print $5}') -j MASQUERADE
 EOF
 
   echo "✓ VPN routing updated"

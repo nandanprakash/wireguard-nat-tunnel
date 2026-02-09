@@ -37,8 +37,9 @@ Internet Access
 ```
 raspberry-pi-vpn/
 ├── relay-wireguard-setup.sh         # Setup relay server (port 22)
-├── pi-wireguard-tunnel-setup.sh     # Setup Pi VPN server (port 2222)
-├── fix-pi-vpn-after-restart.sh      # Fix VPN issues (restarts, interface changes)
+├── pi-wireguard-tunnel-setup.sh     # Setup Pi VPN server (port 2222) - with dynamic interface
+├── fix-vpn-internet-dynamic.sh      # Fix VPN with auto-interface detection (RECOMMENDED)
+├── fix-pi-vpn-after-restart.sh      # Fix VPN issues (basic fix)
 ├── diagnose-pi-vpn.sh               # Diagnostic tool for VPN issues
 ├── README.md                         # This file
 └── QUICK-START.md                    # Quick deployment guide
@@ -109,13 +110,18 @@ ssh -p 2222 ubuntu@pi.nandanprakash.com
 # SSH to Pi VPN server
 ssh -p 2222 ubuntu@pi.nandanprakash.com
 
-# Run fix script
+# Run dynamic interface fix (RECOMMENDED - auto-detects active interface)
+sudo bash /tmp/fix-vpn-internet-dynamic.sh
+
+# OR run the basic fix
 sudo bash /tmp/fix-pi-vpn-after-restart.sh
 ```
 
 **Common Issues Fixed:**
-- ✅ Interface changes (wlan0 → eth0)
+- ✅ **Dynamic interface detection** - automatically uses eth0, wlan0, or any active interface
+- ✅ Interface changes (wlan0 → eth0 or vice versa)
 - ✅ Missing NAT/MASQUERADE rules
+- ✅ Duplicate iptables rules cleanup
 - ✅ IP forwarding disabled
 - ✅ Services not starting after reboot
 
