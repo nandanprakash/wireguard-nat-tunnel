@@ -25,7 +25,11 @@ Temporary Items
 # Sensitive files
 *.key
 *.pem
+*.conf
 *.conf.backup.*
+*.png
+*.jpg
+*.qr
 
 # Backup files
 *.backup
