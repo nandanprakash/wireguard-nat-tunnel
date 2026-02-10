@@ -224,7 +224,7 @@ You want to access the internet **from a specific location** (home office, remot
 
 ```bash
 # Clone this repository
-git clone https://github.com/yourusername/wireguard-nat-tunnel.git
+git clone https://github.com/nandanprakash/wireguard-nat-tunnel.git
 cd wireguard-nat-tunnel
 
 # Edit config.sh - ONLY 2 REQUIRED CHANGES:
