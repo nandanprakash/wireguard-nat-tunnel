@@ -40,11 +40,17 @@ TUNNEL_RELAY_IP="10.9.0.1"
 TUNNEL_VPN_IP="10.9.0.2"
 
 # -----------------------------------------------------------------------------
-# PORT CONFIGURATION (defaults work fine)
+# PORT CONFIGURATION (change if needed)
 # -----------------------------------------------------------------------------
+# These ports must be open/forwarded on your relay server
 WIREGUARD_PORT="51820"              # VPN clients connect here
 WIREGUARD_TUNNEL_PORT="51821"       # VPN server tunnel connects here
-SSH_FORWARD_PORT="2222"             # SSH to VPN server via relay
+SSH_FORWARD_PORT="2222"             # SSH to VPN server via relay (optional)
+
+# Change these if:
+# - Default ports are blocked by your ISP
+# - You want to run multiple VPN setups on same relay
+# - Your relay already uses these ports for something else
 
 # -----------------------------------------------------------------------------
 # DNS CONFIGURATION
@@ -77,15 +83,17 @@ VPN_LOCAL_IP=""
 # =============================================================================
 # 1. Set RELAY_DOMAIN to your relay server's hostname
 # 2. Change SSH_PASSWORD
-# 3. Run relay-wireguard-setup.sh on relay server
-# 4. Run pi-wireguard-tunnel-setup.sh on VPN server
-# 5. Connect relay and VPN server (see README)
-# 6. Generate client configs with generate-phone-qr.sh
+# 3. (Optional) Customize ports if defaults don't work for you
+# 4. Open/forward the configured ports on your relay server
+# 5. Run relay-wireguard-setup.sh on relay server
+# 6. Run pi-wireguard-tunnel-setup.sh on VPN server
+# 7. Connect relay and VPN server (see README)
+# 8. Generate client configs with generate-phone-qr.sh
 #
 # IMPORTANT: Open these ports on your relay server:
-#   - 51820/UDP (VPN clients)
-#   - 51821/UDP (VPN server tunnel)
-#   - 2222/TCP  (SSH to VPN server)
+#   - WIREGUARD_PORT (default 51820/UDP) - for VPN clients
+#   - WIREGUARD_TUNNEL_PORT (default 51821/UDP) - for VPN server tunnel
+#   - SSH_FORWARD_PORT (default 2222/TCP) - for SSH access (optional)
 # =============================================================================
 
 # Export all variables for use in other scripts

@@ -52,10 +52,10 @@ This project uses **reverse tunneling** to flip the problem around. Instead of c
 │              RELAY SERVER (VPS - Fixed Location)            │
 │                  relay.example.com (Public IP)              │
 │                                                              │
-│  Ports forwarded/open:                                      │
+│  Ports open (configurable):                                 │
 │  • 51820/UDP ← VPN clients connect here                     │
 │  • 51821/UDP ← VPN server tunnel connects here              │
-│  • 2222/TCP  ← SSH to VPN server (forwarded)                │
+│  • 2222/TCP  ← SSH to VPN server (optional)                 │
 │                                                              │
 │  • Forwards VPN traffic via socat                           │
 │  • Forwards SSH via iptables DNAT                           │
@@ -135,12 +135,17 @@ This project uses **reverse tunneling** to flip the problem around. Instead of c
 
 **Relay server:** Any VPS with a public IP (DigitalOcean, AWS, etc.). Needs Ubuntu/Debian and root access.
 
-**Important:** These ports must be open/forwarded to your relay server:
-- `51820/UDP` - For VPN clients to connect
-- `51821/UDP` - For VPN server tunnel connection
-- `2222/TCP` - For SSH access to VPN server (optional but recommended)
+**Important - Ports on relay server:**
 
-If your relay server is behind a router (e.g., home server), configure port forwarding on the router. If it's a VPS with a firewall, open these ports in the firewall/security group.
+These ports (or whatever you configure in `config.sh`) must be open/forwarded to your relay server:
+- **51820/UDP** (default `WIREGUARD_PORT`) - VPN clients connect here
+- **51821/UDP** (default `WIREGUARD_TUNNEL_PORT`) - VPN server tunnel connects here
+- **2222/TCP** (default `SSH_FORWARD_PORT`) - SSH to VPN server (optional)
+
+**How to open ports:**
+- If relay is behind a router: Configure port forwarding on the router
+- If relay is a VPS: Open ports in firewall/security group settings
+- If using UFW: The setup script handles this automatically
 
 **VPN server:** Any Ubuntu/Debian machine (Raspberry Pi works great). Can be behind NAT/firewall. Just needs internet access. **No inbound ports or port forwarding required** - it only makes outbound connections.
 
@@ -215,25 +220,33 @@ ssh user@vpn-server
 2. Import the generated config file
 3. Connect
 
-All clients connect to `your-relay-server.com:51820`
+Clients connect to `your-relay-server.com:<WIREGUARD_PORT>` (default port 51820)
 
 ---
 
 ## Configuration
 
-Edit `config.sh` before running the setup scripts. At minimum, you need to change:
+Edit `config.sh` before running the setup scripts. **Required changes:**
 
 ```bash
 RELAY_DOMAIN="vpn.example.com"      # Your relay server's hostname or IP
 SSH_PASSWORD="YourSecurePassword"   # Change this!
 ```
 
-Everything else has sensible defaults, but you can customize:
+**Optional but common customizations:**
 
 ```bash
-VPN_NETWORK="10.200.0.0/24"         # Change VPN client IP range
-WIREGUARD_PORT="8443"               # Use different ports if needed
-VPN_DNS_SERVERS="1.1.1.1, 1.0.0.1"  # Use different DNS servers
+# Ports (change if defaults are blocked or already in use)
+WIREGUARD_PORT="51820"              # VPN client port
+WIREGUARD_TUNNEL_PORT="51821"       # Tunnel port
+SSH_FORWARD_PORT="2222"             # SSH forwarding port
+
+# Networks (change if they conflict with existing networks)
+VPN_NETWORK="10.200.0.0/24"         # VPN client IP range
+TUNNEL_NETWORK="10.9.0.0/30"        # Relay↔VPN server tunnel
+
+# DNS servers
+VPN_DNS_SERVERS="1.1.1.1, 1.0.0.1"  # Cloudflare instead of Google
 ```
 
 Check the comments in `config.sh` for all available options.
@@ -301,10 +314,10 @@ sudo systemctl restart wg-quick@wg-tunnel
 - VPN clients: `10.8.0.0/24` (254 clients)
 - Tunnel: `10.9.0.0/30` (relay: 10.9.0.1, VPN server: 10.9.0.2)
 
-**Ports on relay (must be open):**
-- `51820/UDP` - VPN client connections
-- `51821/UDP` - VPN server tunnel
-- `2222/TCP` - SSH to VPN server
+**Ports on relay (configurable in config.sh):**
+- `WIREGUARD_PORT` (default 51820/UDP) - VPN client connections
+- `WIREGUARD_TUNNEL_PORT` (default 51821/UDP) - VPN server tunnel
+- `SSH_FORWARD_PORT` (default 2222/TCP) - SSH to VPN server
 
 **Services:**
 - Relay: `wg-tunnel`, `wireguard-udp-forward`
