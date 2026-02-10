@@ -182,9 +182,9 @@ Copy the relay public key that's displayed at the end.
 ### 3. Setup VPN server
 
 ```bash
-scp config.sh pi-wireguard-tunnel-setup.sh user@vpn-server:/tmp/
+scp config.sh vpn-server-setup.sh user@vpn-server:/tmp/
 ssh user@vpn-server
-cd /tmp && sudo bash pi-wireguard-tunnel-setup.sh
+cd /tmp && sudo bash vpn-server-setup.sh
 ```
 
 When prompted, paste the relay public key. Copy the VPN server public key that's displayed at the end.
@@ -194,7 +194,7 @@ When prompted, paste the relay public key. Copy the VPN server public key that's
 ```bash
 ssh user@relay-server
 VPN_KEY="<paste_vpn_server_public_key>"
-sudo sed -i "s/PLACEHOLDER_PI_PUBLIC_KEY/$VPN_KEY/" /etc/wireguard/wg-tunnel.conf
+sudo sed -i "s/PLACEHOLDER_VPN_PUBLIC_KEY/$VPN_KEY/" /etc/wireguard/wg-tunnel.conf
 sudo systemctl restart wg-quick@wg-tunnel
 sudo wg show wg-tunnel  # Should show recent handshake
 ```
@@ -303,7 +303,7 @@ sudo systemctl restart wg-quick@wg-tunnel
 
 **Run the diagnostic script on VPN server:**
 ```bash
-./diagnose-pi-vpn.sh
+./diagnose-vpn.sh
 ```
 
 ---

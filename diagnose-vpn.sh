@@ -1,9 +1,9 @@
 #!/bin/bash
-# Diagnostic script for Pi VPN connectivity issues
-# Run this on the Pi server to diagnose VPN problems
+# Diagnostic script for VPN Server connectivity issues
+# Run this on the VPN server to diagnose VPN problems
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Pi VPN Diagnostic Report"
+echo "VPN Server Diagnostic Report"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 

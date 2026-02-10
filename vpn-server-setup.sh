@@ -39,12 +39,12 @@ fi
 echo "Using relay public key: $RELAY_PUBLIC_KEY"
 echo ""
 
-# Step 2: Generate Pi tunnel keys
+# Step 2: Generate VPN server tunnel keys
 echo "Step 2: Generating WireGuard tunnel keys..."
-PI_PRIVATE=$(wg genkey)
-PI_PUBLIC=$(echo "$PI_PRIVATE" | wg pubkey)
+VPN_PRIVATE=$(wg genkey)
+VPN_PUBLIC=$(echo "$VPN_PRIVATE" | wg pubkey)
 
-echo "Pi Server Public Key: $PI_PUBLIC"
+echo "VPN Server Public Key: $VPN_PUBLIC"
 echo ""
 
 # Step 3: Create site-to-site tunnel config
@@ -54,7 +54,7 @@ cat > /etc/wireguard/wg-tunnel.conf << EOF
 # This creates the connection through NAT
 [Interface]
 Address = $TUNNEL_VPN_IP/30
-PrivateKey = $PI_PRIVATE
+PrivateKey = $VPN_PRIVATE
 
 # Relay server peer
 [Peer]
@@ -136,8 +136,8 @@ echo ""
 # Step 9: Save keys
 echo "Step 9: Saving configuration..."
 mkdir -p /root/wireguard-tunnel
-echo "$PI_PUBLIC" > /root/wireguard-tunnel/pi-public-key.txt
-echo "$PI_PRIVATE" > /root/wireguard-tunnel/pi-private-key.txt
+echo "$VPN_PUBLIC" > /root/wireguard-tunnel/vpn-public-key.txt
+echo "$VPN_PRIVATE" > /root/wireguard-tunnel/vpn-private-key.txt
 echo "$RELAY_PUBLIC_KEY" > /root/wireguard-tunnel/relay-public-key.txt
 chmod 600 /root/wireguard-tunnel/*
 echo "✓ Keys saved to /root/wireguard-tunnel/"
@@ -150,7 +150,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Your VPN Server Public Key (copy this for relay configuration):"
 echo ""
-echo "  $PI_PUBLIC"
+echo "  $VPN_PUBLIC"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "NEXT STEP: Configure relay server with this VPN server's public key"
@@ -158,7 +158,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "On relay server ($RELAY_DOMAIN), run:"
 echo ""
-echo "  sudo sed -i 's/PLACEHOLDER_PI_PUBLIC_KEY/$PI_PUBLIC/' /etc/wireguard/wg-tunnel.conf"
+echo "  sudo sed -i 's/PLACEHOLDER_VPN_PUBLIC_KEY/$VPN_PUBLIC/' /etc/wireguard/wg-tunnel.conf"
 echo "  sudo systemctl restart wg-quick@wg-tunnel"
 echo "  sudo wg show wg-tunnel"
 echo "  ping -c 3 $TUNNEL_VPN_IP"

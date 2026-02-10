@@ -86,7 +86,7 @@ VPN_LOCAL_IP=""
 # 3. (Optional) Customize ports if defaults don't work for you
 # 4. Open/forward the configured ports on your relay server
 # 5. Run relay-wireguard-setup.sh on relay server
-# 6. Run pi-wireguard-tunnel-setup.sh on VPN server
+# 6. Run vpn-server-setup.sh on VPN server
 # 7. Connect relay and VPN server (see README)
 # 8. Generate client configs with generate-phone-qr.sh
 #
