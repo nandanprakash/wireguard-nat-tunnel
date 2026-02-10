@@ -1,12 +1,22 @@
 #!/bin/bash
-# WireGuard Site-to-Site Tunnel Setup for Pi
-# Replaces rathole with WireGuard tunnel to relay server
-# Run on: Pi/Ubuntu VPN server
+# WireGuard Site-to-Site Tunnel Setup for VPN Server
+# Creates tunnel connection from VPN server to relay server
+# Run on: VPN server (the one that will be behind NAT)
 
 set -e
 
+# Load configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/config.sh" ]; then
+    source "$SCRIPT_DIR/config.sh"
+else
+    echo "Error: config.sh not found!"
+    echo "Please create config.sh from config.sh.example"
+    exit 1
+fi
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Pi WireGuard Tunnel Setup"
+echo "VPN Server Tunnel Setup"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -16,9 +26,15 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Automatically fetch relay public key from relay server
-echo "Step 1: Fetching relay server public key..."
-RELAY_PUBLIC_KEY="sp2/ytxRW15iRD1p9LzzETHqtuDmkRnhmpnAYOtCnxA="
+# Get relay public key
+echo "Step 1: Reading relay server public key..."
+echo "Enter the relay server's public key (from relay setup):"
+read -r RELAY_PUBLIC_KEY
+
+if [ -z "$RELAY_PUBLIC_KEY" ]; then
+    echo "Error: Relay public key is required!"
+    exit 1
+fi
 
 echo "Using relay public key: $RELAY_PUBLIC_KEY"
 echo ""
@@ -37,15 +53,15 @@ cat > /etc/wireguard/wg-tunnel.conf << EOF
 # Site-to-site tunnel to relay server
 # This creates the connection through NAT
 [Interface]
-Address = 10.9.0.2/30
+Address = $TUNNEL_VPN_IP/30
 PrivateKey = $PI_PRIVATE
 
 # Relay server peer
 [Peer]
 PublicKey = $RELAY_PUBLIC_KEY
-Endpoint = pi.nandanprakash.com:51821
-AllowedIPs = 10.9.0.1/32
-PersistentKeepalive = 25
+Endpoint = $RELAY_DOMAIN:$WIREGUARD_TUNNEL_PORT
+AllowedIPs = $TUNNEL_RELAY_IP/32
+PersistentKeepalive = $PERSISTENT_KEEPALIVE
 EOF
 
 echo "✓ Tunnel config created at /etc/wireguard/wg-tunnel.conf"
@@ -100,7 +116,7 @@ echo ""
 # Step 7: Configure firewall (if UFW is active)
 echo "Step 7: Configuring firewall..."
 if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
-  ufw allow 51820/udp comment 'WireGuard VPN server' 2>/dev/null || true
+  ufw allow $WIREGUARD_PORT/udp comment 'WireGuard VPN server' 2>/dev/null || true
   echo "✓ Firewall configured (UFW)"
 else
   echo "ℹ UFW not active, skipping firewall rules"
@@ -110,7 +126,7 @@ echo ""
 # Step 8: Test tunnel
 echo "Step 8: Testing tunnel connectivity..."
 sleep 2
-if ping -c 2 -W 3 10.9.0.1 &>/dev/null; then
+if ping -c 2 -W 3 $TUNNEL_RELAY_IP &>/dev/null; then
   echo "✓ Tunnel is working! Can reach relay server"
 else
   echo "⚠ Warning: Cannot ping relay server yet (this is normal if relay hasn't added our public key)"
@@ -129,30 +145,28 @@ echo ""
 
 # Step 10: Instructions
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✓ Pi Tunnel Setup Complete!"
+echo "✓ VPN Server Tunnel Setup Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "Your Pi Server Public Key (copy this for relay configuration):"
+echo "Your VPN Server Public Key (copy this for relay configuration):"
 echo ""
 echo "  $PI_PUBLIC"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "NEXT STEP: Configure relay server with this Pi's public key"
+echo "NEXT STEP: Configure relay server with this VPN server's public key"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "On relay server (pi.nandanprakash.com), run:"
+echo "On relay server ($RELAY_DOMAIN), run:"
 echo ""
 echo "  sudo sed -i 's/PLACEHOLDER_PI_PUBLIC_KEY/$PI_PUBLIC/' /etc/wireguard/wg-tunnel.conf"
-echo "  sudo wg-quick down wg-tunnel 2>/dev/null || true"
-echo "  sudo wg-quick up wg-tunnel"
-echo "  sudo systemctl enable wg-quick@wg-tunnel"
+echo "  sudo systemctl restart wg-quick@wg-tunnel"
 echo "  sudo wg show wg-tunnel"
-echo "  ping -c 3 10.9.0.2"
+echo "  ping -c 3 $TUNNEL_VPN_IP"
 echo ""
 echo "Status:"
-echo "  Tunnel:     wg-tunnel (10.9.0.2) → pi.nandanprakash.com:51821"
-echo "  VPN Server: wg0 (10.8.0.1)"
-echo "  Public access: pi.nandanprakash.com:51820 → forwarded to 10.8.0.1:51820"
+echo "  Tunnel:     wg-tunnel ($TUNNEL_VPN_IP) → $RELAY_DOMAIN:$WIREGUARD_TUNNEL_PORT"
+echo "  VPN Server: wg0 ($VPN_GATEWAY)"
+echo "  Public access: $RELAY_DOMAIN:$WIREGUARD_PORT → forwarded to VPN server"
 echo ""
-echo "Phone config: No changes needed - still use pi.nandanprakash.com:51820"
+echo "Client config: Endpoint should be $RELAY_DOMAIN:$WIREGUARD_PORT"
 echo ""

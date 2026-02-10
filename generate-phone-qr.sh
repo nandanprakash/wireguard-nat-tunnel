@@ -1,11 +1,21 @@
 #!/bin/bash
-# Generate fresh phone WireGuard config with QR code
-# Run on: Pi VPN server (port 2222)
+# Generate WireGuard client config with QR code
+# Run on: VPN server
 
 set -e
 
+# Load configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/config.sh" ]; then
+    source "$SCRIPT_DIR/config.sh"
+else
+    echo "Error: config.sh not found!"
+    echo "Please create config.sh from config.sh.example"
+    exit 1
+fi
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Generating Fresh Phone VPN Config"
+echo "Generate VPN Client Config"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -29,19 +39,19 @@ echo "✓ Keys generated"
 echo ""
 
 # Create client config file
-echo "Creating phone config..."
+echo "Creating client config..."
 cat > /tmp/phone-new.conf << EOF
 [Interface]
 PrivateKey = $PHONE_PRIVATE
-Address = 10.8.0.5/24
-DNS = 8.8.8.8, 8.8.4.4
+Address = $CLIENT_PHONE_IP/24
+DNS = $VPN_DNS_SERVERS
 
 [Peer]
 PublicKey = $SERVER_PUBLIC_KEY
 PresharedKey = $PHONE_PRESHARED
-Endpoint = pi.nandanprakash.com:51820
+Endpoint = $RELAY_DOMAIN:$WIREGUARD_PORT
 AllowedIPs = 0.0.0.0/0
-PersistentKeepalive = 25
+PersistentKeepalive = $PERSISTENT_KEEPALIVE
 EOF
 
 echo "✓ Config created at /tmp/phone-new.conf"
@@ -49,7 +59,7 @@ echo ""
 
 # Add peer to running server
 echo "Adding peer to WireGuard server..."
-wg set wg0 peer "$PHONE_PUBLIC" preshared-key <(echo "$PHONE_PRESHARED") allowed-ips 10.8.0.5/32
+wg set wg0 peer "$PHONE_PUBLIC" preshared-key <(echo "$PHONE_PRESHARED") allowed-ips $CLIENT_PHONE_IP/32
 echo "✓ Peer added to running server"
 echo ""
 
@@ -60,7 +70,7 @@ cat >> /etc/wireguard/wg0.conf << EOF
 [Peer]
 PublicKey = $PHONE_PUBLIC
 PresharedKey = $PHONE_PRESHARED
-AllowedIPs = 10.8.0.5/32
+AllowedIPs = $CLIENT_PHONE_IP/32
 EOF
 echo "✓ Peer added to config file"
 echo ""
@@ -83,20 +93,19 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✓ Setup Complete!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "Phone IP: 10.8.0.5"
-echo "Instructions:"
-echo "  1. Delete old WireGuard connection from your phone"
-echo "  2. Open WireGuard app"
-echo "  3. Tap '+' to add tunnel"
-echo "  4. Tap 'Create from QR code'"
-echo "  5. Scan the QR code above"
-echo "  6. Name it (e.g., 'Pi VPN')"
-echo "  7. Toggle ON to connect"
+echo "Client IP: $CLIENT_PHONE_IP"
 echo ""
-echo "Key Settings in Config:"
-echo "  ✓ AllowedIPs = 0.0.0.0/0  (routes ALL traffic through VPN)"
-echo "  ✓ DNS = 8.8.8.8, 8.8.4.4  (Google DNS)"
-echo "  ✓ Endpoint = pi.nandanprakash.com:51820"
+echo "Instructions:"
+echo "  1. Open WireGuard app on your device"
+echo "  2. Tap '+' to add tunnel"
+echo "  3. Tap 'Create from QR code'"
+echo "  4. Scan the QR code above"
+echo "  5. Toggle ON to connect"
+echo ""
+echo "Configuration:"
+echo "  ✓ Endpoint: $RELAY_DOMAIN:$WIREGUARD_PORT"
+echo "  ✓ DNS: $VPN_DNS_SERVERS"
+echo "  ✓ Routes ALL traffic through VPN"
 echo ""
 echo "After connecting, you should have full internet access!"
 echo ""

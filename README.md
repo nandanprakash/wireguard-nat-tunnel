@@ -1,43 +1,38 @@
-# 🌐 WireGuard NAT Tunnel
+# WireGuard NAT Tunnel
 
-**Deploy a VPN server at any remote location and access it from anywhere, without worrying about NAT, firewalls, or port forwarding.**
+Deploy a VPN server at any remote location and access it from anywhere, without worrying about NAT, firewalls, or port forwarding.
 
 ---
 
-## 🎯 The Problem & Solution
+## The Problem
 
-### The Real-World Scenario
+You want to run a VPN server somewhere behind a NAT/firewall (home network, friend's house, remote office), but you can't configure port forwarding. Maybe you don't have access to the router, maybe the ISP uses CGNAT, or maybe you just don't want to mess with firewall rules at every location you deploy.
 
-You want to access the internet **from a specific location** (home office, remote office, friend's house, IoT network):
+Traditional VPN setups require you to:
+- Open inbound ports on the VPN server's firewall
+- Configure port forwarding on the router
+- Have a static IP or dynamic DNS
+- Deal with ISP restrictions
 
-1. **Deploy a VPN VM** at that location (behind their router/firewall)
-2. **Leave it there** - it connects back to your relay server
-3. **Connect from anywhere** - your phone/laptop connects to the relay
-4. **Access internet** as if you were physically at that location
+This is a pain when you're deploying VPNs at multiple locations, especially if you don't control the network infrastructure.
 
-### Why This Is Needed
+## The Solution
 
-**The Challenge:**
-- ❌ VPN server is behind NAT/firewall (no direct access)
-- ❌ Can't configure port forwarding (not your router, or ISP CGNAT)
-- ❌ Router admin password unknown (office, friend's network)
-- ❌ Need to deploy multiple VPN servers at different locations
-- ❌ Can't expose VPN server directly to internet
+This project uses **reverse tunneling** to flip the problem around. Instead of clients connecting directly to your VPN server (which might be impossible), they connect to a relay server with a public IP. The VPN server initiates an outbound WireGuard tunnel to the relay, which then forwards traffic.
 
-**The Solution: Reverse Tunnel**
-- ✅ VPN server **initiates outbound connection** to relay (no inbound ports needed!)
-- ✅ Relay has **stable public hostname/IP** (phones always connect here)
-- ✅ **Deploy VPN server anywhere** - it automatically connects back
-- ✅ **Move VPN server anytime** - just plug it in, it works
-- ✅ **No configuration needed** at deployment location
+**What this means:**
+- VPN server only makes outbound connections (works through any firewall)
+- No port forwarding needed at the VPN server location
+- Relay server has a stable hostname that clients always connect to
+- Move your VPN server anywhere with internet access - it just works
 
 ### Perfect For
 
-- 🏠 **Home Office VPN** - Access home network while traveling
-- 🏢 **Remote Office Access** - Deploy at client site without network changes
-- 🌍 **Multiple Locations** - Deploy VPN servers in different cities/countries
-- 🔒 **IoT/Lab Networks** - Secure access to isolated networks
-- 🚀 **Quick Deployments** - Ship pre-configured VPN server, plug & play
+- **Home network access** - Deploy at home, access your network while traveling
+- **Remote offices** - Drop a VPN server at a client site without touching their network
+- **Multiple locations** - Run VPN servers in different cities/countries for regional internet access
+- **IoT/Lab networks** - Secure access to isolated networks behind restrictive firewalls
+- **Quick deployments** - Pre-configure a device, ship it, and it connects automatically when plugged in
 
 ---
 
@@ -51,57 +46,49 @@ You want to access the internet **from a specific location** (home office, remot
 │                   "I want VPN from Tokyo"                   │
 └────────────────────────┬────────────────────────────────────┘
                          │
-                         │ 1. Connects to relay.example.com:51820
-                         │    (Your stable, known hostname)
+                         │ Connects to relay.example.com:51820
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │              RELAY SERVER (VPS - Fixed Location)            │
 │                  relay.example.com (Public IP)              │
-│  ☁️ aws/digitalocean/gcp                                     │
 │                                                              │
-│  • Always online, stable hostname                           │
+│  Ports forwarded/open:                                      │
+│  • 51820/UDP ← VPN clients connect here                     │
+│  • 51821/UDP ← VPN server tunnel connects here              │
+│  • 2222/TCP  ← SSH to VPN server (forwarded)                │
+│                                                              │
 │  • Forwards VPN traffic via socat                           │
 │  • Forwards SSH via iptables DNAT                           │
 └────────────────────────┬────────────────────────────────────┘
                          │
-                         │ 2. WireGuard Tunnel (REVERSE CONNECTION)
-                         │    VPN Server → Relay (outbound only!)
-                         │    Relay IP: 10.9.0.1 ↔ VPN IP: 10.9.0.2
+                         │ WireGuard Tunnel (REVERSE CONNECTION)
+                         │ VPN Server → Relay (outbound only!)
+                         │ Tunnel IPs: 10.9.0.1 ↔ 10.9.0.2
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │         VPN SERVER (Physically at Target Location)          │
 │              Tokyo Office (Behind Router/NAT)               │
-│  🏠 Behind firewall, no port forwarding needed               │
 │                                                              │
-│  • Initiates tunnel to relay (outbound = works anywhere!)  │
+│  NO inbound ports needed!                                   │
+│  • Initiates tunnel to relay (outbound only)                │
 │  • Runs WireGuard VPN for clients                           │
 │  • Provides internet access from THIS location              │
 └────────────────────────┬────────────────────────────────────┘
                          │
-                         │ 3. NAT Masquerade
-                         │    Your traffic exits from Tokyo
+                         │ NAT Masquerade - traffic exits here
                          ↓
                   🌍 Internet (Tokyo IP)
 ```
 
 ### Key Concepts
 
-**🔄 Reverse Tunnel (The Secret Sauce):**
-- VPN server makes **outbound connection** to relay
-- No inbound ports needed on VPN server!
-- Works through any NAT/firewall
-- VPN server can be anywhere with internet
+**Reverse Tunnel:** The VPN server initiates an outbound WireGuard tunnel to the relay. This means the VPN server doesn't need any inbound ports open - it just needs to reach the internet. The tunnel stays open with persistent keepalives.
 
-**📍 Fixed Relay, Mobile VPN:**
-- **Relay:** Permanent VPS at fixed location (relay.example.com)
-- **VPN Server:** Can be moved anywhere - auto-reconnects to relay
-- **Your Phone:** Always connects to same hostname
+**Fixed Relay:** You set up one relay server with a stable public IP/hostname. This could be a cheap VPS anywhere. Clients (phones, laptops) always connect to this relay.
 
-**🚀 Deployment Workflow:**
-1. **Setup once:** Configure relay server with stable hostname
-2. **Deploy anywhere:** Move VPN server to target location
-3. **Plug in:** VPN server auto-connects to relay via tunnel
-4. **Connect:** Phone connects to relay, traffic goes through VPN server
+**Mobile VPN Server:** The actual VPN server that provides internet access can be anywhere - behind NAT, behind a firewall, on different networks. It automatically connects back to the relay via the tunnel.
+
+**Traffic Flow:** Client → Relay (port 51820) → Tunnel → VPN Server → Internet. The relay just forwards traffic; the VPN server does all the actual VPN work.
 
 ### Traffic Flow Example
 
@@ -116,381 +103,233 @@ You want to access the internet **from a specific location** (home office, remot
 
 ---
 
-## ✨ Features
+## Features
 
-### Core Capabilities
-- ✅ **Reverse Tunnel** - VPN server initiates connection (no inbound ports!)
-- ✅ **Deploy Anywhere** - Works through any NAT/firewall/router
-- ✅ **Stable Hostname** - Relay server has fixed domain (phones always connect here)
-- ✅ **Location-Based VPN** - Access internet from wherever VPN server is located
-- ✅ **Plug & Play** - Pre-configure, ship, plug in - it works
-
-### Technical Features
-- ✅ **No Port Forwarding** - VPN server needs zero network configuration
-- ✅ **Dynamic Interface Detection** - Auto-detects eth0/wlan0/any interface
-- ✅ **Auto-Reconnect** - WireGuard PersistentKeepalive keeps tunnel alive
-- ✅ **SSH Access** - Access VPN server remotely via `relay:2222`
-- ✅ **Production Ready** - Systemd services, auto-start on boot
-- ✅ **Easy Setup** - 2 scripts, 5 minutes, minimal config
-- ✅ **Secure** - WireGuard encryption + no exposed ports on VPN server
+- **No port forwarding needed** - VPN server only makes outbound connections
+- **Deploy anywhere** - Works through NAT, firewalls, CGNAT, everything
+- **Stable endpoint** - Clients always connect to the same relay hostname
+- **Location-based internet access** - Browse as if you're wherever the VPN server is
+- **Auto-reconnect** - PersistentKeepalive keeps the tunnel alive
+- **Dynamic interface detection** - Works with eth0, wlan0, or whatever interface you have
+- **SSH access** - Reach your VPN server via the relay (port 2222)
+- **Simple setup** - Two scripts, one config file, done in 5 minutes
+- **Production ready** - Systemd services, auto-start on boot
 
 ---
 
-## 💡 Real-World Use Cases
+## Use Cases
 
-### 1. Remote Office Deployment
-**Scenario:** Access client's network remotely without their IT changing anything.
+**Remote office access:** Ship a pre-configured VPN server to a client site. They plug it in, it connects back to your relay, and you can access their network without touching their router or firewall.
 
-**How:**
-- Ship pre-configured VPN server to client site
-- Client plugs it into their network (no router config needed!)
-- VPN server tunnels back to your relay
-- You connect from anywhere to access their network
+**Multi-location internet:** Deploy VPN servers in different cities or countries. Route your traffic through whichever location you need. Same relay, multiple VPN servers.
 
-**Benefit:** No IT tickets, no waiting, no router access needed.
+**Home network while traveling:** Access your home network, NAS, security cameras, etc. from anywhere without port forwarding or exposing services to the internet.
 
----
+**Site-to-site VPN:** Connect two offices without firewall changes. Drop a VPN server at the remote site, it tunnels back, done.
 
-### 2. Multi-Location Internet Access
-**Scenario:** Need to access internet from different countries/cities.
-
-**How:**
-- Deploy VPN servers in NYC, London, Tokyo, etc.
-- Each one tunnels back to same relay server
-- Connect to different VPNs for different exit locations
-
-**Benefit:** One relay, multiple VPN servers, access internet from anywhere.
+**IoT/Lab access:** Get into isolated networks that have strict inbound firewall rules. Outbound connections usually work fine.
 
 ---
 
-### 3. Home Network Access While Traveling
-**Scenario:** Access home network, NAS, IoT devices while away.
+## Prerequisites
 
-**How:**
-- Deploy VPN server at home (behind your router)
-- No port forwarding or router config needed
-- Connect from anywhere to access home network
+**Relay server:** Any VPS with a public IP (DigitalOcean, AWS, etc.). Needs Ubuntu/Debian and root access.
 
-**Benefit:** Secure remote access without exposing services directly.
+**Important:** These ports must be open/forwarded to your relay server:
+- `51820/UDP` - For VPN clients to connect
+- `51821/UDP` - For VPN server tunnel connection
+- `2222/TCP` - For SSH access to VPN server (optional but recommended)
 
----
+If your relay server is behind a router (e.g., home server), configure port forwarding on the router. If it's a VPS with a firewall, open these ports in the firewall/security group.
 
-### 4. Quick Site-to-Site VPN
-**Scenario:** Connect two offices securely.
+**VPN server:** Any Ubuntu/Debian machine (Raspberry Pi works great). Can be behind NAT/firewall. Just needs internet access. **No inbound ports or port forwarding required** - it only makes outbound connections.
 
-**How:**
-- Deploy VPN server at office B (behind their firewall)
-- Office A users connect via relay
-- Access office B resources as if local
-
-**Benefit:** No firewall changes at office B, instant setup.
+**Your computer:** For running setup scripts and generating configs.
 
 ---
 
-### 5. IoT/Lab Network Access
-**Scenario:** Secure access to isolated IoT/test network.
+## Quick Start
 
-**How:**
-- Deploy VPN server on isolated network
-- Reverse tunnel to relay (outbound firewall usually allows)
-- Access devices remotely
-
-**Benefit:** Secure access without opening inbound holes.
-
----
-
-## 📋 Prerequisites
-
-### Relay Server (VPS with Public IP)
-- Ubuntu/Debian server with public IP
-- Root/sudo access
-- Ports available: 51820/UDP, 51821/UDP, 2222/TCP
-- Router port forwarding configured (if behind router)
-
-### VPN Server (Can be behind NAT)
-- Ubuntu/Debian server (Raspberry Pi works great!)
-- Root/sudo access
-- Can reach internet (outbound connections)
-- No inbound ports needed!
-
-### Your Computer
-- To run scripts and generate client configs
-
----
-
-## 🚀 Quick Start (5 Minutes)
-
-### Step 1: Configure
+### 1. Clone and configure
 
 ```bash
-# Clone this repository
 git clone https://github.com/nandanprakash/wireguard-nat-tunnel.git
 cd wireguard-nat-tunnel
-
-# Edit config.sh - ONLY 2 REQUIRED CHANGES:
 nano config.sh
 ```
 
-**Minimal config (only change these):**
+Change these two lines in `config.sh`:
 ```bash
-RELAY_DOMAIN="your-relay-server.com"    # Your relay's domain/IP
-SSH_PASSWORD="YourSecurePassword"       # Change this!
+RELAY_DOMAIN="your-relay-server.com"
+SSH_PASSWORD="YourSecurePassword"
 ```
 
-That's it! Defaults work for everything else.
-
-### Step 2: Setup Relay Server
+### 2. Setup relay server
 
 ```bash
-# Copy files to relay server
-scp config.sh relay-wireguard-setup.sh user@your-relay-server.com:/tmp/
-
-# SSH to relay and run setup
-ssh user@your-relay-server.com
-cd /tmp
-sudo bash relay-wireguard-setup.sh
-
-# ✅ Copy the relay public key shown at the end
+scp config.sh relay-wireguard-setup.sh user@relay-server:/tmp/
+ssh user@relay-server
+cd /tmp && sudo bash relay-wireguard-setup.sh
 ```
 
-### Step 3: Setup VPN Server
+Copy the relay public key that's displayed at the end.
+
+### 3. Setup VPN server
 
 ```bash
-# Copy files to VPN server
-scp config.sh pi-wireguard-tunnel-setup.sh user@vpn-server-local-ip:/tmp/
-
-# SSH to VPN server and run setup
-ssh user@vpn-server-local-ip
-cd /tmp
-sudo bash pi-wireguard-tunnel-setup.sh
-
-# ✅ Copy the VPN server public key shown at the end
+scp config.sh pi-wireguard-tunnel-setup.sh user@vpn-server:/tmp/
+ssh user@vpn-server
+cd /tmp && sudo bash pi-wireguard-tunnel-setup.sh
 ```
 
-### Step 4: Connect Relay to VPN Server
+When prompted, paste the relay public key. Copy the VPN server public key that's displayed at the end.
+
+### 4. Connect them
 
 ```bash
-# SSH back to relay server
-ssh user@your-relay-server.com
-
-# Add VPN server's public key
-VPN_KEY="<paste_vpn_server_public_key_here>"
+ssh user@relay-server
+VPN_KEY="<paste_vpn_server_public_key>"
 sudo sed -i "s/PLACEHOLDER_PI_PUBLIC_KEY/$VPN_KEY/" /etc/wireguard/wg-tunnel.conf
 sudo systemctl restart wg-quick@wg-tunnel
-
-# Verify tunnel is up
-sudo wg show wg-tunnel
-# Should show "latest handshake: X seconds ago"
+sudo wg show wg-tunnel  # Should show recent handshake
 ```
 
-### Step 5: Generate Client Config
+### 5. Generate client config
 
 ```bash
-# On your computer (or relay server)
-./generate-phone-qr.sh
-
-# Scan QR code with WireGuard app on your phone!
+ssh user@vpn-server
+./generate-phone-qr.sh  # Scan with WireGuard app
 ```
 
 ---
 
-## 📱 Connecting Clients
+## Connecting Clients
 
-### Mobile (iOS/Android)
-1. Install [WireGuard app](https://www.wireguard.com/install/)
+**Mobile (iOS/Android):**
+1. Install WireGuard app
 2. Scan QR code from `generate-phone-qr.sh`
-3. Toggle VPN ON
-4. ✅ All traffic routes through your VPN!
+3. Toggle ON
 
-### Desktop (Windows/Mac/Linux)
-1. Install [WireGuard](https://www.wireguard.com/install/)
-2. Import config file generated by script
-3. Activate connection
+**Desktop (Windows/Mac/Linux):**
+1. Install WireGuard
+2. Import the generated config file
+3. Connect
 
-**Endpoint:** `your-relay-server.com:51820`
-
----
-
-## 🔧 Configuration Reference
-
-### Minimal Setup (Required)
-```bash
-RELAY_DOMAIN="vpn.example.com"      # Your relay server's public address
-SSH_PASSWORD="SecurePassword123"    # SSH password for both servers
-```
-
-### Common Customizations
-```bash
-# Use different VPN network
-VPN_NETWORK="10.200.0.0/24"
-VPN_GATEWAY="10.200.0.1"
-
-# Use different ports
-WIREGUARD_PORT="8443"               # Change if 51820 is blocked
-WIREGUARD_TUNNEL_PORT="8444"
-SSH_FORWARD_PORT="2200"
-
-# Use Cloudflare DNS instead of Google
-VPN_DNS_SERVERS="1.1.1.1, 1.0.0.1"
-```
+All clients connect to `your-relay-server.com:51820`
 
 ---
 
-## 🛠️ Management
+## Configuration
 
-### Check Status
+Edit `config.sh` before running the setup scripts. At minimum, you need to change:
 
-**On Relay:**
 ```bash
-sudo wg show wg-tunnel              # Tunnel status
-sudo systemctl status wireguard-udp-forward  # socat status
+RELAY_DOMAIN="vpn.example.com"      # Your relay server's hostname or IP
+SSH_PASSWORD="YourSecurePassword"   # Change this!
 ```
 
-**On VPN Server:**
+Everything else has sensible defaults, but you can customize:
+
 ```bash
-sudo wg show wg0                    # VPN clients
-sudo wg show wg-tunnel              # Tunnel to relay
-./diagnose-pi-vpn.sh                # Full diagnostic
+VPN_NETWORK="10.200.0.0/24"         # Change VPN client IP range
+WIREGUARD_PORT="8443"               # Use different ports if needed
+VPN_DNS_SERVERS="1.1.1.1, 1.0.0.1"  # Use different DNS servers
 ```
 
-### Restart Services
+Check the comments in `config.sh` for all available options.
 
-**Relay:**
+---
+
+## Management
+
+**Check tunnel status:**
 ```bash
+# On relay
+sudo wg show wg-tunnel
+sudo systemctl status wireguard-udp-forward
+
+# On VPN server
+sudo wg show wg0
+sudo wg show wg-tunnel
+```
+
+**Restart services:**
+```bash
+# Relay
 sudo systemctl restart wg-quick@wg-tunnel
 sudo systemctl restart wireguard-udp-forward
-```
 
-**VPN Server:**
-```bash
+# VPN server
 sudo systemctl restart wg-quick@wg0
 sudo systemctl restart wg-quick@wg-tunnel
 ```
 
-### Add More Clients
-
+**Add more clients:**
 ```bash
-# Generate new client
+# On VPN server
 ./generate-phone-qr.sh
-
-# Or manually add to VPN server's /etc/wireguard/wg0.conf
 ```
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### VPN Connects But No Internet
+**VPN connects but no internet:**
+- Check NAT on VPN server: `sudo iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE`
+- Check forwarding rules: `sudo iptables -L FORWARD -n -v | grep wg0`
+- Disconnect from any other VPNs (nested VPNs cause routing conflicts)
 
-**Check 1: Verify NAT is working**
+**Can't connect to VPN:**
+- Test if relay is reachable: `nc -zvu your-relay-server.com 51820`
+- Check tunnel handshake on relay: `sudo wg show wg-tunnel | grep handshake`
+- Verify socat is running on relay: `sudo systemctl status wireguard-udp-forward`
+
+**Can't SSH to VPN server:**
+- Try: `ssh -p 2222 user@your-relay-server.com`
+- Check DNAT on relay: `sudo iptables -t nat -L PREROUTING -n -v | grep 2222`
+
+**Run the diagnostic script on VPN server:**
 ```bash
-# On VPN server
-sudo iptables -t nat -L POSTROUTING -n -v | grep MASQUERADE
-# Should show packets going through
-```
-
-**Check 2: Check forwarding**
-```bash
-# On VPN server
-sudo iptables -L FORWARD -n -v | grep wg0
-# Should show packets
-```
-
-**Check 3: Disable corporate VPN**
-- Nested VPNs cause conflicts!
-- Disconnect from work VPN before connecting to your VPN
-
-### Can't Connect to VPN
-
-**Check 1: Relay is reachable**
-```bash
-nc -zvu your-relay-server.com 51820
-# Should say "succeeded"
-```
-
-**Check 2: Tunnel is up**
-```bash
-# On relay
-sudo wg show wg-tunnel | grep handshake
-# Should show recent handshake
-```
-
-**Check 3: socat is running**
-```bash
-# On relay
-sudo systemctl status wireguard-udp-forward
-# Should be "active (running)"
-```
-
-### SSH to VPN Server Not Working
-
-```bash
-# From anywhere
-ssh -p 2222 user@your-relay-server.com
-
-# If fails, check DNAT on relay
-sudo iptables -t nat -L PREROUTING -n -v | grep 2222
+./diagnose-pi-vpn.sh
 ```
 
 ---
 
-## 📊 Network Details
+## Network Details
 
-### IP Ranges
-- **VPN Client Network:** `10.8.0.0/24` (254 clients)
-- **Tunnel Network:** `10.9.0.0/30` (2 IPs)
-  - Relay: `10.9.0.1`
-  - VPN Server: `10.9.0.2`
+**IP ranges:**
+- VPN clients: `10.8.0.0/24` (254 clients)
+- Tunnel: `10.9.0.0/30` (relay: 10.9.0.1, VPN server: 10.9.0.2)
 
-### Ports
-- **51820/UDP:** VPN client connections (public)
-- **51821/UDP:** Relay-to-VPN tunnel (public)
-- **2222/TCP:** SSH to VPN server (public)
+**Ports on relay (must be open):**
+- `51820/UDP` - VPN client connections
+- `51821/UDP` - VPN server tunnel
+- `2222/TCP` - SSH to VPN server
 
-### Services
-- **Relay:** `wg-tunnel`, `wireguard-udp-forward` (socat)
-- **VPN Server:** `wg-tunnel`, `wg0`
+**Services:**
+- Relay: `wg-tunnel`, `wireguard-udp-forward`
+- VPN server: `wg-tunnel`, `wg0`
 
 ---
 
-## 🔐 Security Considerations
+## Security
 
-- ✅ WireGuard uses state-of-the-art cryptography (Noise protocol)
-- ✅ All traffic encrypted end-to-end
-- ✅ Change default SSH password in `config.sh`
-- ✅ Consider using SSH keys instead of passwords
-- ✅ Configure firewall (UFW) on both servers
-- ✅ No WireGuard private keys in repository
-- ⚠️ Relay server must be trusted (sees encrypted traffic)
+- Change the default SSH password in `config.sh` (or better: use SSH keys)
+- Configure UFW on both servers to limit exposed ports
+- The relay forwards encrypted WireGuard traffic but can see when/how much data flows
+- Private keys are never committed to the repository - they're generated during setup
+- WireGuard uses modern cryptography (Noise protocol, Curve25519, ChaCha20, Poly1305)
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Contributions welcome! Please open an issue or pull request.
+Issues and pull requests welcome!
 
----
+## License
 
-## 📄 License
+MIT - use it for whatever you want.
 
-MIT License - feel free to use for personal or commercial projects.
+## Credits
 
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [WireGuard](https://www.wireguard.com/) - Fast, modern VPN
-- [socat](http://www.dest-unreach.org/socat/) - Multipurpose relay
-
----
-
-## 📚 Learn More
-
-- [WireGuard Documentation](https://www.wireguard.com/quickstart/)
-- [How NAT Traversal Works](https://en.wikipedia.org/wiki/NAT_traversal)
-- [WireGuard Protocol Paper](https://www.wireguard.com/papers/wireguard.pdf)
-
----
-
-**🎉 Enjoy your personal VPN accessible from anywhere!**
+Built with [WireGuard](https://www.wireguard.com/) and [socat](http://www.dest-unreach.org/socat/).
